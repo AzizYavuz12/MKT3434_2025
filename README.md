@@ -1,4 +1,4 @@
-# Machine Learning Course GUI – Final Submission (Assignment 1 & 2)
+# Machine Learning Course GUI –Submission (Assignment 1 & 2)
 
 This Python GUI application, developed using **PyQt6**, provides an interactive environment for experimenting with classical and deep learning algorithms, as well as dimensionality reduction and clustering techniques. This project satisfies the requirements of **both Assignment 1 and Assignment 2** for the MKT3434 course.
 
