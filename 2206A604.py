@@ -1,7 +1,9 @@
 import sys
 import numpy as np
 import pandas as pd
+import plotly.express as px
 
+from umap import UMAP
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                            QHBoxLayout, QTabWidget, QPushButton, QLabel, 
                            QComboBox, QFileDialog, QSpinBox, QDoubleSpinBox,
@@ -12,6 +14,7 @@ from PyQt6.QtCore import Qt
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+from sklearn.metrics import silhouette_score
 from sklearn import datasets, preprocessing, model_selection
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.naive_bayes import GaussianNB
@@ -25,6 +28,8 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import accuracy_score, mean_squared_error, confusion_matrix,mean_absolute_error,log_loss, hinge_loss
 import tensorflow as tf
 from tensorflow.keras import layers, models, optimizers
+from sklearn.manifold import TSNE
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 
 class MLCourseGUI(QMainWindow):
     def __init__(self):
@@ -50,11 +55,237 @@ class MLCourseGUI(QMainWindow):
         # Create components
         self.create_data_section()
         self.create_tabs()
+        self.setup_dimensionality_reduction_tools()
         self.create_visualization()
         self.create_status_bar()
+
+    def run_pca(self):
+        """Run PCA and plot explained variance"""
+        try:
+            # Convert X_train to numpy array if it's a DataFrame
+            if isinstance(self.X_train, pd.DataFrame):
+                X_train_array = self.X_train.values
+            else:
+                X_train_array = self.X_train
+
+            # Check if data exists
+            if X_train_array is None or len(X_train_array) == 0:
+                self.show_error("No training data available for PCA.")
+                return
+
+            # Automatically apply standard scaling (important for PCA)
+            scaler = preprocessing.StandardScaler()
+            X_scaled = scaler.fit_transform(X_train_array)
+
+            # Perform PCA
+            n_components = self.pca_components_spin.value()
+            pca = PCA(n_components=n_components)
+            X_pca = pca.fit_transform(X_scaled)
+
+            # Plot the explained variance
+            self.figure.clear()
+            ax = self.figure.add_subplot(111)
+            ax.bar(range(1, len(pca.explained_variance_ratio_) + 1), pca.explained_variance_ratio_)
+            ax.set_xlabel('Principal Components')
+            ax.set_ylabel('Explained Variance Ratio')
+            ax.set_title('PCA Explained Variance')
+            self.canvas.draw()
+
+            # Log to console
+            print("PCA Successful:", pca.explained_variance_ratio_)
+
+        except Exception as e:
+            print("PCA Error:", str(e))  # For developer debugging
+            self.show_error(f"Error running PCA: {str(e)}")
+
+    
+    def demo_covariance_projection(self):
+        """Manual PCA example using given covariance matrix"""
+        cov = np.array([[5, 2], [2, 3]])
+        eigvals, eigvecs = np.linalg.eig(cov)
+        principal_vector = eigvecs[:, np.argmax(eigvals)]
+
+        self.show_message(f"Covariance Matrix:\n{cov}\n\nPrincipal Component:\n{principal_vector}")
+
+
+    def run_lda(self):
+        """Run LDA and plot class separation"""
+        try:
+            if self.y_train is None:  
+                self.show_error("LDA requires target labels (y_train)!")
+                return
+            
+            lda = LDA(n_components=2) 
+            X_lda = lda.fit_transform(self.X_train, self.y_train)
+
+            self.figure.clear() 
+            ax = self.figure.add_subplot(111)  
+            scatter = ax.scatter(X_lda[:, 0], X_lda[:, 1], c=self.y_train, cmap='jet') 
+            self.figure.colorbar(scatter) 
+            ax.set_title('LDA Class Separation') 
+            self.canvas.draw()
+
+            # Explained variance ratio
+            explained_var = lda.explained_variance_ratio_
+            text = "LDA Explained Variance Ratio:\n" + "\n".join([f"Component {i+1}: {var:.4f}" for i, var in enumerate(explained_var)])
+            self.show_message(text)
+
+        except Exception as e:
+            self.show_error(f"Error running LDA: {str(e)}")
+
+    def run_tsne(self):
+        """Run t-SNE and plot in 2D or 3D"""
+        try:
+            # Get selection from ComboBox
+            selected_dim = self.tsne_dim_combo.currentText()
+            n_components = 2 if selected_dim == "2D" else 3
+
+            # Create t-SNE model
+            tsne = TSNE(n_components=n_components, perplexity=self.tsne_perplexity_spin.value(), random_state=42)
+            X_tsne = tsne.fit_transform(self.X_train)
+
+            self.figure.clear()
+
+            # 2D Plot
+            if n_components == 2:
+                ax = self.figure.add_subplot(111)
+                scatter = ax.scatter(X_tsne[:, 0], X_tsne[:, 1], 
+                                    c=self.y_train if self.y_train is not None else 'b', cmap='viridis')
+                self.figure.colorbar(scatter)
+                ax.set_title('t-SNE Projection (2D)')
+
+            # 3D Plot
+            else:
+                from mpl_toolkits.mplot3d import Axes3D  # Required for 3D plotting
+                ax = self.figure.add_subplot(111, projection='3d')
+                scatter = ax.scatter(X_tsne[:, 0], X_tsne[:, 1], X_tsne[:, 2], 
+                                    c=self.y_train if self.y_train is not None else 'b', cmap='viridis')
+                self.figure.colorbar(scatter)
+                ax.set_title('t-SNE Projection (3D)')
+
+            self.canvas.draw()
+
+        except Exception as e:
+            self.show_error(f"Error running t-SNE: {str(e)}")
+
+    def run_tsne_plotly(self):
+        """Run t-SNE and show with Plotly"""
+        try:
+            selected_dim = self.tsne_dim_combo.currentText()
+            n_components = 2 if selected_dim == "2D" else 3
+
+            tsne = TSNE(n_components=n_components, perplexity=self.tsne_perplexity_spin.value(), random_state=42)
+            X_tsne = tsne.fit_transform(self.X_train)
+
+            if self.y_train is not None:
+                labels = self.y_train
+            else:
+                labels = [0] * len(X_tsne)
+
+            if n_components == 2:
+                fig = px.scatter(x=X_tsne[:, 0], y=X_tsne[:, 1], color=labels.astype(str),
+                                labels={'x': 'TSNE-1', 'y': 'TSNE-2'},
+                                title='t-SNE Projection (2D - Plotly)')
+            else:
+                fig = px.scatter_3d(x=X_tsne[:, 0], y=X_tsne[:, 1], z=X_tsne[:, 2],
+                                    color=labels.astype(str),
+                                    labels={'x': 'TSNE-1', 'y': 'TSNE-2', 'z': 'TSNE-3'},
+                                    title='t-SNE Projection (3D - Plotly)')
+
+            fig.show()
+
+        except Exception as e:
+            self.show_error(f"Error running Plotly t-SNE: {str(e)}")
+
+
+    def run_umap(self):
+        """Run UMAP and plot"""
+        try:
+            reducer = UMAP(n_components=2, random_state=42)
+            X_umap = reducer.fit_transform(self.X_train)
+
+            self.figure.clear()
+            ax = self.figure.add_subplot(111)
+            scatter = ax.scatter(X_umap[:, 0], X_umap[:, 1], c=self.y_train if self.y_train is not None else 'b', cmap='Spectral')
+            self.figure.colorbar(scatter)
+            ax.set_title('UMAP Projection')
+            self.canvas.draw()
+        except Exception as e:
+            self.show_error(f"Error running UMAP: {str(e)}")
+
+    def run_umap_plotly(self):
+        """Run UMAP and show with Plotly"""
+        try:
+            selected_dim = self.tsne_dim_combo.currentText()  # We reuse the t-SNE dimension selection
+            n_components = 2 if selected_dim == "2D" else 3
+
+            reducer = UMAP(n_components=n_components, random_state=42)
+            X_umap = reducer.fit_transform(self.X_train)
+
+            if self.y_train is not None:
+                labels = self.y_train
+            else:
+                labels = [0] * len(X_umap)
+
+            if n_components == 2:
+                fig = px.scatter(x=X_umap[:, 0], y=X_umap[:, 1], color=labels.astype(str),
+                                labels={'x': 'UMAP-1', 'y': 'UMAP-2'},
+                                title='UMAP Projection (2D - Plotly)')
+            else:
+                fig = px.scatter_3d(x=X_umap[:, 0], y=X_umap[:, 1], z=X_umap[:, 2],
+                                    color=labels.astype(str),
+                                    labels={'x': 'UMAP-1', 'y': 'UMAP-2', 'z': 'UMAP-3'},
+                                    title='UMAP Projection (3D - Plotly)')
+
+            fig.show()
+
+        except Exception as e:
+            self.show_error(f"Error running Plotly UMAP: {str(e)}")
+
+
+    def run_kmeans(self):
+        """Run K-Means: Elbow method, PCA visualization, and Silhouette Score"""
+        try:
+            inertias = []
+            Ks = range(1, 11)
+            for k in Ks:
+                kmeans = KMeans(n_clusters=k, random_state=42, n_init='auto')
+                kmeans.fit(self.X_train)
+                inertias.append(kmeans.inertia_)
+
+            k_selected = self.kmeans_k_spin.value()
+            kmeans_final = KMeans(n_clusters=k_selected, random_state=42, n_init='auto')
+            labels = kmeans_final.fit_predict(self.X_train)
+            score = silhouette_score(self.X_train, labels)
+
+            pca = PCA(n_components=2)
+            X_2d = pca.fit_transform(self.X_train)
+
+            self.figure.clear()
+            ax = self.figure.add_subplot(111)
+            scatter = ax.scatter(X_2d[:, 0], X_2d[:, 1], c=labels, cmap='tab10')
+            self.figure.colorbar(scatter)
+            ax.set_title(f"KMeans Clusters (k={k_selected}) - Silhouette Score: {score:.4f}")
+            ax.set_xlabel("PCA Component 1")
+            ax.set_ylabel("PCA Component 2")
+            self.canvas.draw()
+
+            elbow_text = f"Elbow Inertias (k=1 to 10):\n" + ", ".join(f"{val:.2f}" for val in inertias)
+            self.show_message(elbow_text)
+
+        except Exception as e:
+            self.show_error(f"Error running KMeans: {str(e)}")
+
+
     def load_dataset(self):
         """Load selected dataset"""
         try:
+
+            total = self.train_split_spin.value() + self.val_split_spin.value() + self.test_split_spin.value()
+            if abs(total - 1.0) > 0.01:
+                self.show_error("Train / Validation / Test ratios must sum to 1.0")
+                return
+            
             dataset_name = self.dataset_combo.currentText()
             
             if dataset_name == "Load Custom Dataset":
@@ -76,13 +307,17 @@ class MLCourseGUI(QMainWindow):
                 self.status_bar.showMessage(f"Loaded {dataset_name}")
                 return
             
-            # Split data
-            test_size = self.split_spin.value()
-            self.X_train, self.X_test, self.y_train, self.y_test = \
-                model_selection.train_test_split(data.data, data.target, 
-                                              test_size=test_size, 
-                                              random_state=42)
-            
+            # Split using custom Train/Val/Test proportions
+            test_size = self.test_split_spin.value()
+            val_size = self.val_split_spin.value()
+
+            X_temp, self.X_test, y_temp, self.y_test = model_selection.train_test_split(
+                data.data, data.target, test_size=test_size, random_state=42)
+
+            val_relative_size = val_size / (1.0 - test_size)
+            self.X_train, self.X_val, self.y_train, self.y_val = model_selection.train_test_split(
+                X_temp, y_temp, test_size=val_relative_size, random_state=42)
+
             # Apply scaling if selected
             self.apply_scaling()
             
@@ -94,6 +329,12 @@ class MLCourseGUI(QMainWindow):
     def load_custom_data(self):
         """Load custom dataset from CSV file"""
         try:
+
+            total = self.train_split_spin.value() + self.val_split_spin.value() + self.test_split_spin.value()
+            if abs(total - 1.0) > 0.01:
+                self.show_error("Train / Validation / Test ratios must sum to 1.0")
+                return
+            
             file_name, _ = QFileDialog.getOpenFileName(
                 self,
                 "Load Dataset",
@@ -111,13 +352,18 @@ class MLCourseGUI(QMainWindow):
                 if target_col:
                     X = data.drop(target_col, axis=1)
                     y = data[target_col]
-                    
-                    # Split data
-                    test_size = self.split_spin.value()
-                    self.X_train, self.X_test, self.y_train, self.y_test = \
-                        model_selection.train_test_split(X, y, 
-                                                      test_size=test_size, 
-                                                      random_state=42)
+
+                    # Split using Train/Val/Test proportions
+                    test_size = self.test_split_spin.value()
+                    val_size = self.val_split_spin.value()
+
+                    X_temp, self.X_test, y_temp, self.y_test = model_selection.train_test_split(
+                        X, y, test_size=test_size, random_state=42)
+
+                    val_relative_size = val_size / (1.0 - test_size)
+                    self.X_train, self.X_val, self.y_train, self.y_val = model_selection.train_test_split(
+                        X_temp, y_temp, test_size=val_relative_size, random_state=42)
+
                     
                     # Apply scaling if selected
                     self.apply_scaling()
@@ -210,7 +456,58 @@ class MLCourseGUI(QMainWindow):
         
         data_group.setLayout(data_layout)
         self.layout.addWidget(data_group)
-    
+        split_options = self.create_split_options()
+        self.layout.addWidget(split_options)
+
+    def create_split_options(self):
+        """Create train/validation/test split and k-fold options"""
+        split_group = QGroupBox("Data Split Options")
+        layout = QVBoxLayout()
+
+        # --- Train/Validation/Test Split ---
+        split_layout = QHBoxLayout()
+
+        self.train_split_spin = QDoubleSpinBox()
+        self.train_split_spin.setRange(0.1, 0.9)
+        self.train_split_spin.setSingleStep(0.05)
+        self.train_split_spin.setValue(0.7)
+        split_layout.addWidget(QLabel("Train %"))
+        split_layout.addWidget(self.train_split_spin)
+
+        self.val_split_spin = QDoubleSpinBox()
+        self.val_split_spin.setRange(0.05, 0.9)
+        self.val_split_spin.setSingleStep(0.05)
+        self.val_split_spin.setValue(0.15)
+        split_layout.addWidget(QLabel("Validation %"))
+        split_layout.addWidget(self.val_split_spin)
+
+        self.test_split_spin = QDoubleSpinBox()
+        self.test_split_spin.setRange(0.05, 0.9)
+        self.test_split_spin.setSingleStep(0.05)
+        self.test_split_spin.setValue(0.15)
+        split_layout.addWidget(QLabel("Test %"))
+        split_layout.addWidget(self.test_split_spin)
+
+        layout.addLayout(split_layout)
+
+        # --- K-Fold Cross Validation ---
+        self.kfold_checkbox = QCheckBox("Enable k-Fold Cross Validation")
+        layout.addWidget(self.kfold_checkbox)
+
+        kfold_layout = QHBoxLayout()
+        self.kfold_spin = QSpinBox()
+        self.kfold_spin.setRange(2, 20)
+        self.kfold_spin.setValue(5)
+        kfold_layout.addWidget(QLabel("k value:"))
+        kfold_layout.addWidget(self.kfold_spin)
+
+        layout.addLayout(kfold_layout)
+
+        split_group.setLayout(layout)
+
+        return split_group
+
+
     def create_tabs(self):
         """Create tabs for different ML topics"""
         self.tab_widget = QTabWidget()
@@ -497,6 +794,152 @@ class MLCourseGUI(QMainWindow):
         try:
             model = None
             y_pred = None
+            #This part will work if the user choose the K-Fold
+            if self.kfold_checkbox.isChecked():
+                if self.kfold_checkbox.isChecked():
+                    from sklearn.model_selection import KFold
+                    k = self.kfold_spin.value()
+                    kf = KFold(n_splits=k, shuffle=True, random_state=42)
+
+                    metrics = []
+                    for train_index, test_index in kf.split(self.X_train):
+                        X_train_k, X_test_k = self.X_train[train_index], self.X_train[test_index]
+                        y_train_k, y_test_k = self.y_train[train_index], self.y_train[test_index]
+
+                        model = None
+                        y_pred_k = None
+
+                        if name == "Linear Regression":
+                            model = LinearRegression(fit_intercept=param_widgets["fit_intercept"].isChecked())
+                            model.fit(X_train_k, y_train_k)
+                            y_pred_k = model.predict(X_test_k)
+                            mse = mean_squared_error(y_test_k, y_pred_k)
+                            rmse = np.sqrt(mse)
+                            metrics.append(rmse)
+
+                        elif name == "Support Vector Regression":
+                            model = SVR(
+                                C=param_widgets["C"].value(),
+                                epsilon=param_widgets["epsilon"].value(),
+                                kernel=param_widgets["kernel"].currentText()
+                            )
+                            model.fit(X_train_k, y_train_k)
+                            y_pred_k = model.predict(X_test_k)
+                            mse = mean_squared_error(y_test_k, y_pred_k)
+                            rmse = np.sqrt(mse)
+                            metrics.append(rmse)
+
+                        elif name in ["Logistic Regression", "Support Vector Machine", "Decision Tree", "Random Forest"]:
+                            if name == "Logistic Regression":
+                                model = LogisticRegression(
+                                    C=param_widgets["C"].value(),
+                                    max_iter=param_widgets["max_iter"].value(),
+                                    multi_class=param_widgets["multi_class"].currentText()
+                                )
+                            elif name == "Support Vector Machine":
+                                model = SVC(
+                                    C=param_widgets["C"].value(),
+                                    kernel=param_widgets["kernel"].currentText(),
+                                    degree=param_widgets["degree"].value()
+                                )
+                            elif name == "Decision Tree":
+                                model = DecisionTreeClassifier(
+                                    max_depth=param_widgets["max_depth"].value(),
+                                    min_samples_split=param_widgets["min_samples_split"].value(),
+                                    criterion=param_widgets["criterion"].currentText()
+                                )
+                            elif name == "Random Forest":
+                                model = RandomForestClassifier(
+                                    n_estimators=param_widgets["n_estimators"].value(),
+                                    max_depth=param_widgets["max_depth"].value(),
+                                    min_samples_split=param_widgets["min_samples_split"].value()
+                                )
+                            model.fit(X_train_k, y_train_k)
+                            y_pred_k = model.predict(X_test_k)
+                            acc = accuracy_score(y_test_k, y_pred_k)
+                            metrics.append(acc)
+
+                    mean_val = np.mean(metrics)
+                    std_val = np.std(metrics)
+
+                    if name in ["Linear Regression", "Support Vector Regression"]:
+                        self.show_message(f"{name} - k-Fold RMSE: {mean_val:.4f} ± {std_val:.4f}")
+                        self.metrics_text.setText(f"RMSE (k={k}) across folds:\n{metrics}\n\nMean ± Std:\n{mean_val:.4f} ± {std_val:.4f}")
+                    else:
+                        self.show_message(f"{name} - k-Fold Accuracy: {mean_val:.4f} ± {std_val:.4f}")
+                        self.metrics_text.setText(f"Accuracy (k={k}) across folds:\n{metrics}\n\nMean ± Std:\n{mean_val:.4f} ± {std_val:.4f}")
+                    return
+
+
+                for train_index, test_index in kf.split(self.X_train):
+                    X_train_k, X_test_k = self.X_train[train_index], self.X_train[test_index]
+                    y_train_k, y_test_k = self.y_train[train_index], self.y_train[test_index]
+
+                    if name == "Logistic Regression":
+                        model = LogisticRegression(
+                            C=param_widgets["C"].value(),
+                            max_iter=param_widgets["max_iter"].value(),
+                            multi_class=param_widgets["multi_class"].currentText()
+                        )
+                        model.fit(X_train_k, y_train_k)
+                        y_pred_k = model.predict(X_test_k)
+                        acc = accuracy_score(y_test_k, y_pred_k)
+                        scores.append(acc)
+                        self.status_bar.showMessage(f"Fold {fold} Accuracy: {acc:.4f}")
+                        fold += 1
+                    elif name == "Support Vector Machine":
+                        model = SVC(
+                            C=param_widgets["C"].value(),
+                            kernel=param_widgets["kernel"].currentText(),
+                            degree=param_widgets["degree"].value()
+                        )
+                        model.fit(X_train_k, y_train_k)
+                        y_pred_k = model.predict(X_test_k)
+                        acc = accuracy_score(y_test_k, y_pred_k)
+                        scores.append(acc)
+
+                    elif name == "Decision Tree":
+                        model = DecisionTreeClassifier(
+                            max_depth=param_widgets["max_depth"].value(),
+                            min_samples_split=param_widgets["min_samples_split"].value(),
+                            criterion=param_widgets["criterion"].currentText()
+                        )
+                        model.fit(X_train_k, y_train_k)
+                        y_pred_k = model.predict(X_test_k)
+                        acc = accuracy_score(y_test_k, y_pred_k)
+                        scores.append(acc)
+
+                    elif name == "Random Forest":
+                        model = RandomForestClassifier(
+                            n_estimators=param_widgets["n_estimators"].value(),
+                            max_depth=param_widgets["max_depth"].value(),
+                            min_samples_split=param_widgets["min_samples_split"].value()
+                        )
+                        model.fit(X_train_k, y_train_k)
+                        y_pred_k = model.predict(X_test_k)
+                        acc = accuracy_score(y_test_k, y_pred_k)
+                        scores.append(acc)
+
+                    elif name == "Support Vector Regression":
+                        model = SVR(
+                            C=param_widgets["C"].value(),
+                            epsilon=param_widgets["epsilon"].value(),
+                            kernel=param_widgets["kernel"].currentText()
+                        )
+                        model.fit(X_train_k, y_train_k)
+                        y_pred_k = model.predict(X_test_k)
+                        mse = mean_squared_error(y_test_k, y_pred_k)
+                        rmse = np.sqrt(mse)
+                        scores.append(rmse)
+
+
+                mean_score = np.mean(scores)
+                std_score = np.std(scores)
+                if name in ["Linear Regression", "Support Vector Regression"]:
+                    self.show_message(f"{name} - k-Fold RMSE: {mean_score:.4f} ± {std_score:.4f}")
+                else:
+                    self.show_message(f"{name} - k-Fold Accuracy: {mean_score:.4f} ± {std_score:.4f}")
+                return
 
             def calculate_regression_loss(y_true, y_pred):
                 loss_type = self.loss_combo.currentText()
@@ -921,7 +1364,6 @@ class MLCourseGUI(QMainWindow):
                 
         return model
 
-   
         
     def train_neural_network(self):
         """Train the neural network"""
@@ -1046,7 +1488,175 @@ class MLCourseGUI(QMainWindow):
         
         self.figure.tight_layout()
         self.canvas.draw()
-        
+
+    def setup_dimensionality_reduction_tools(self):
+        """Set up extended Dimensionality Reduction tools"""
+        tab = self.tab_widget.widget(2).widget()  # Dimensionality Reduction tab
+        layout = tab.layout()
+
+        # --- PCA Section ---
+        pca_group = QGroupBox("PCA (Principal Component Analysis)")
+        pca_layout = QVBoxLayout()
+
+        self.pca_components_spin = QSpinBox()
+        self.pca_components_spin.setRange(1, 100)
+        self.pca_components_spin.setValue(2)
+        pca_layout.addWidget(QLabel("Number of Components:"))
+        pca_layout.addWidget(self.pca_components_spin)
+
+        run_pca_btn = QPushButton("Run PCA")
+        run_pca_btn.clicked.connect(self.run_pca)
+        pca_layout.addWidget(run_pca_btn)
+
+        # Button: PCA 1D Projection Example from covariance matrix
+        demo_btn = QPushButton("PCA Projection Example (Σ matrix)")
+        demo_btn.clicked.connect(self.demo_covariance_projection)
+        pca_layout.addWidget(demo_btn)
+
+        pca_group.setLayout(pca_layout)
+        layout.addWidget(pca_group, 1, 0)
+
+        # --- LDA Section ---
+        lda_group = QGroupBox("LDA (Linear Discriminant Analysis)")
+        lda_layout = QVBoxLayout()
+
+        run_lda_btn = QPushButton("Run LDA")
+        run_lda_btn.clicked.connect(self.run_lda)
+        lda_layout.addWidget(run_lda_btn)
+
+        lda_group.setLayout(lda_layout)
+        layout.addWidget(lda_group, 1, 1)
+
+        # --- t-SNE Section ---
+        tsne_group = QGroupBox("t-SNE (t-Distributed Stochastic Neighbor Embedding)")
+        tsne_layout = QVBoxLayout()
+
+        plotly_btn = QPushButton("Run t-SNE (Interactive - Plotly)")
+        plotly_btn.clicked.connect(self.run_tsne_plotly)
+        tsne_layout.addWidget(plotly_btn)
+
+        # Projection type (2D/3D)
+        self.tsne_dim_combo = QComboBox()
+        self.tsne_dim_combo.addItems(["2D", "3D"])
+        tsne_layout.addWidget(QLabel("Projection Type:"))
+        tsne_layout.addWidget(self.tsne_dim_combo)
+
+        self.tsne_perplexity_spin = QDoubleSpinBox()
+        self.tsne_perplexity_spin.setRange(5.0, 50.0)
+        self.tsne_perplexity_spin.setValue(30.0)
+        self.tsne_perplexity_spin.setSingleStep(1.0)
+        tsne_layout.addWidget(QLabel("Perplexity:"))
+        tsne_layout.addWidget(self.tsne_perplexity_spin)
+
+        run_tsne_btn = QPushButton("Run t-SNE")
+        run_tsne_btn.clicked.connect(self.run_tsne)
+        tsne_layout.addWidget(run_tsne_btn)
+
+        tsne_group.setLayout(tsne_layout)
+        layout.addWidget(tsne_group, 2, 0)
+
+        # --- UMAP Section ---
+        umap_group = QGroupBox("UMAP (Uniform Manifold Approximation and Projection)")
+        umap_layout = QVBoxLayout()
+
+        run_umap_btn = QPushButton("Run UMAP")
+        run_umap_btn.clicked.connect(self.run_umap)
+        umap_layout.addWidget(run_umap_btn)
+
+        run_umap_plotly_btn = QPushButton("Run UMAP (Interactive - Plotly)")
+        run_umap_plotly_btn.clicked.connect(self.run_umap_plotly)
+        umap_layout.addWidget(run_umap_plotly_btn)
+
+        umap_group.setLayout(umap_layout)
+        layout.addWidget(umap_group, 2, 2)
+
+        # --- KMeans Section ---
+        kmeans_group = QGroupBox("K-Means Clustering")
+        kmeans_layout = QVBoxLayout()
+
+        self.kmeans_k_spin = QSpinBox()
+        self.kmeans_k_spin.setRange(1, 20)
+        self.kmeans_k_spin.setValue(3)
+        kmeans_layout.addWidget(QLabel("Number of Clusters (k):"))
+        kmeans_layout.addWidget(self.kmeans_k_spin)
+
+        run_kmeans_btn = QPushButton("Run KMeans")
+        run_kmeans_btn.clicked.connect(self.run_kmeans)
+        kmeans_layout.addWidget(run_kmeans_btn)
+
+        kmeans_group.setLayout(kmeans_layout)
+        layout.addWidget(kmeans_group, 2, 1)
+   
+    def run_pca(self):
+        """Run PCA and plot explained variance"""
+        try:
+            pca = PCA(n_components=self.pca_components_spin.value())
+            X_pca = pca.fit_transform(self.X_train)
+
+            self.figure.clear()
+            ax = self.figure.add_subplot(111)
+            ax.bar(range(1, len(pca.explained_variance_ratio_) + 1), pca.explained_variance_ratio_)
+            ax.set_xlabel('Principal Components')
+            ax.set_ylabel('Explained Variance Ratio')
+            ax.set_title('PCA Explained Variance')
+            self.canvas.draw()
+        except Exception as e:
+            self.show_error(f"Error running PCA: {str(e)}")
+
+    def run_lda(self):
+        """Run LDA and plot class separation"""
+        try:
+            if self.y_train is None:
+                self.show_error("LDA requires target labels (y_train)!")
+                return
+            
+            lda = LDA(n_components=2)
+            X_lda = lda.fit_transform(self.X_train, self.y_train)
+
+            self.figure.clear()
+            ax = self.figure.add_subplot(111)
+            scatter = ax.scatter(X_lda[:, 0], X_lda[:, 1], c=self.y_train, cmap='jet')
+            self.figure.colorbar(scatter)
+            ax.set_title('LDA Class Separation')
+            self.canvas.draw()
+        except Exception as e:
+            self.show_error(f"Error running LDA: {str(e)}")
+
+    def run_tsne(self):
+        """Run t-SNE and plot"""
+        try:
+            tsne = TSNE(n_components=2, perplexity=self.tsne_perplexity_spin.value(), random_state=42)
+            X_tsne = tsne.fit_transform(self.X_train)
+
+            self.figure.clear()
+            ax = self.figure.add_subplot(111)
+            scatter = ax.scatter(X_tsne[:, 0], X_tsne[:, 1], c=self.y_train if self.y_train is not None else 'b', cmap='viridis')
+            self.figure.colorbar(scatter)
+            ax.set_title('t-SNE Projection')
+            self.canvas.draw()
+        except Exception as e:
+            self.show_error(f"Error running t-SNE: {str(e)}")
+
+    def run_kmeans(self):
+        """Run K-Means and plot Elbow Method"""
+        try:
+            inertias = []
+            Ks = range(1, 11)
+            for k in Ks:
+                kmeans = KMeans(n_clusters=k, random_state=42, n_init='auto')
+                kmeans.fit(self.X_train)
+                inertias.append(kmeans.inertia_)
+
+            self.figure.clear()
+            ax = self.figure.add_subplot(111)
+            ax.plot(Ks, inertias, 'bo-')
+            ax.set_xlabel('Number of Clusters (k)')
+            ax.set_ylabel('Inertia')
+            ax.set_title('KMeans Elbow Method')
+            self.canvas.draw()
+        except Exception as e:
+            self.show_error(f"Error running KMeans: {str(e)}")
+ 
     def show_error(self, message):
         """Show error message dialog"""
         QMessageBox.critical(self, "Error", message)
