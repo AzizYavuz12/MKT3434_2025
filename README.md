@@ -1,290 +1,222 @@
-# Machine Learning Course GUI –Submission (Assignment 1 & 2)
 
-This Python GUI application, developed using **PyQt6**, provides an interactive environment for experimenting with classical and deep learning algorithms, as well as dimensionality reduction and clustering techniques. This project satisfies the requirements of **both Assignment 1 and Assignment 2** for the MKT3434 course.
+#  Assignment 3: Deep Learning & Advanced Training Techniques
 
-## Project Purpose
-
-The goal of this project is to give students an intuitive interface to:
-- Load and preprocess datasets
-- Train, evaluate, and visualize a wide range of machine learning models
-- Apply advanced dimensionality reduction techniques for high-dimensional data
-- Understand model performance through metrics and visual diagnostics
-- Use unsupervised learning for clustering and projection
+In this final extension, the GUI was enhanced to support **designing, training, and evaluating deep learning models interactively**. The system supports modern techniques such as CNNs, RNNs, transfer learning, gradient visualization, and advanced training control via the GUI.
 
 ---
 
-## Installation
+##  Neural Network Architecture Design
 
-Install all dependencies with:
+Users can dynamically build neural network models by stacking different layer types via GUI components. Each layer can be configured (units, activation, dropout, etc.) and added/removed interactively.
 
-```bash
-pip install pyqt6 scikit-learn tensorflow matplotlib pandas numpy plotly umap-learn
+###  Multi-Layer Perceptrons (MLPs)
+
+MLPs consist of stacked fully-connected (Dense) layers. They are fundamental in deep learning for structured data.
+
+```python
+model.add(Dense(128, activation='relu'))
+model.add(Dense(64, activation='relu'))
+model.add(Dense(10, activation='softmax'))
 ```
 
-✅ Assignment 1: Core ML Functionality
+The GUI allows users to add these layers in sequence, choose activations (ReLU, Sigmoid, Tanh), and visualize the layer stack.
 
-📌 Data Handling
+---
 
-### Mean Imputation for Missing Data
-Replaces missing values with the column mean using `SimpleImputer` from scikit-learn. This replaces missing values with the column mean using scikit-learn's `SimpleImputer`.
+###  Convolutional Neural Networks (CNNs)
+
+CNNs are specialized for image data, capturing spatial hierarchies through filters. Users can add Conv2D, MaxPooling2D, Flatten, and Dropout layers via the interface.
+
 ```python
-from sklearn.impute import SimpleImputer
-
-imputer = SimpleImputer(strategy="mean")
-self.X_train = imputer.fit_transform(self.X_train)
+model.add(Conv2D(32, (3, 3), activation='relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Flatten())
 ```
 
-- Load from built-in datasets or custom CSV files
-- Select target column for supervised tasks
-- Apply feature scaling:
-  - StandardScaler
-  - MinMaxScaler
-  - RobustScaler
+The GUI automatically reshapes 1D inputs into 2D image tensors when the feature size is a perfect square (e.g., 784 → 28×28).
 
-### Feature Scaling
-Normalizes feature values to improve model convergence. Normalize features using standard, min-max or robust methods to improve model performance.
+---
+
+###  Recurrent Neural Networks (LSTM / GRU)
+
+RNNs process sequential data like time-series or text. The interface allows users to insert LSTM or GRU layers with optional `return_sequences` and dropout.
+
 ```python
-if scaling_method == "Standard Scaling":
-    scaler = preprocessing.StandardScaler()
-self.X_train = scaler.fit_transform(self.X_train)
+model.add(LSTM(64, return_sequences=True))
+model.add(GRU(32))
 ```
 
-- Handle missing values using:
-  - Mean Imputation
-  - Interpolation
-  - Forward / Backward Fill
+Layers are listed visually and can be removed or reordered.
 
-### Interpolation / Forward-Fill / Backward-Fill
-Handles missing values using time-series-aware strategies. Handle missing time-series style data using pandas methods.
+---
+
+##  Training Customization
+
+The training panel allows full control over optimization strategy and model regularization.
+
+###  Optimizer Selection
+
+Users can choose between **Adam**, **SGD**, or **RMSprop**, each suited for different convergence behaviors.
+
 ```python
-self.X_train = self.X_train.interpolate(method='linear').fillna(method='bfill')
-```
-
-- Train / Validation / Test splits (e.g., 70-15-15)
-
-### Custom Train/Validation/Test Splits
-Splits the data into user-defined proportions for training, validation, and testing. Custom data partitioning to simulate real-world ML workflows.
-```python
-self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(
-    X_temp, y_temp, test_size=val_relative_size)
-```
-
-📌 Classical Models
-
-- Regression Models:
-  - Linear Regression
-  - Support Vector Regression (SVR)
-
-### Support Vector Regression (SVR)
-A regression model that uses a margin of tolerance to fit the best line. A regression model with tunable kernel and margin-insensitive loss.
-```python
-model = SVR(C=1.0, epsilon=0.1, kernel='rbf')
-model.fit(self.X_train, self.y_train)
-```
-
-- Classification Models:
-  - Logistic Regression
-  - Naive Bayes (with priors)
-  - SVM
-  - KNN, Decision Tree, Random Forest
-
-### Random Forest Classifier
-An ensemble learning method that uses multiple decision trees to increase accuracy and prevent overfitting. A robust ensemble model using multiple decision trees.
-```python
-model = RandomForestClassifier(n_estimators=100, max_depth=5)
-model.fit(self.X_train, self.y_train)
-```
-
-📌 Loss Function Configuration
-
-### Customizable Loss Functions
-Supports Mean Squared Error, Mean Absolute Error, and Huber loss for regression tasks. Select regression loss functions dynamically.
-```python
-if loss_type == "MSE":
-    loss = mean_squared_error(y_true, y_pred)
-elif loss_type == "Huber":
-    delta = 1.0
-    loss = np.mean(np.where(
-        np.abs(y_true - y_pred) < delta,
-        0.5 * (y_true - y_pred) ** 2,
-        delta * (np.abs(y_true - y_pred) - 0.5 * delta)
-    ))
-```
-
-📌 Naive Bayes Custom Priors
-
-### Naive Bayes with Custom Priors
-Allows specification of prior probabilities to influence classification outcomes. Enables students to specify prior class probabilities.
-```python
-priors = list(map(float, self.prior_input.text().strip().split(',')))
-model = GaussianNB(var_smoothing=smoothing, priors=priors)
-model.fit(self.X_train, self.y_train)
-```
-
-📌 Visual Output
-
-### Prediction Results Visualization
-Displays a scatter plot comparing actual and predicted values. Compare predicted vs. actual values with scatter plots.
-```python
-ax.scatter(self.y_test, y_pred)
-ax.plot([self.y_test.min(), self.y_test.max()],
-         [self.y_test.min(), self.y_test.max()], 'r--')
+if optimizer == "Adam":
+    opt = tf.keras.optimizers.Adam(learning_rate=lr)
 ```
 
 ---
 
-✅ Assignment 2: Dimensionality Reduction & Advanced Analysis
+###  Learning Rate Decay (Scheduling)
 
-📌 PCA – Principal Component Analysis
+Learning rate schedules adjust how fast the model learns over time:
 
-### Principal Component Analysis (PCA)
-PCA is a statistical method that transforms original features into a set of new uncorrelated components 
-(principal components), ranked by the amount of variance they capture. It is especially useful for:
-- Reducing computational cost
-- Removing multicollinearity
-- Visualizing high-dimensional data in 2D or 3D
-Reduces dimensionality while preserving variance.
+- **Step Decay**: halves learning rate at regular intervals.
+- **Exponential Decay**: continuously decreases the rate exponentially.
+
 ```python
-from sklearn.decomposition import PCA
-
-# Apply PCA with user-defined number of components
-pca = PCA(n_components=3)
-X_pca = pca.fit_transform(X_train)
-
-# Explained variance ratio
-print("Explained Variance Ratio:", pca.explained_variance_ratio_)
-print("First few components:
-", X_pca[:5])
-X_pca = pca.fit_transform(self.X_train)
+def step_decay(epoch):
+    return initial_lr * (0.5 ** (epoch // 10))
 ```
 
-📌 Covariance-Based Manual PCA
+The GUI dropdown lets users activate these schedules.
 
-### Manual PCA from Covariance Matrix
-This example manually computes the eigenvectors and eigenvalues of a covariance matrix to find the direction of maximum variance. 
-It's a practical demonstration of how PCA works under the hood using linear algebra concepts.
-Demonstrates eigen decomposition and 1D projection.
+---
+
+###  Regularization: Dropout & L2
+
+To prevent overfitting, users can add:
+
+- **Dropout**: Randomly zeroes neurons during training.
+- **L2 Regularization**: Penalizes large weights using a lambda factor.
+
 ```python
-import numpy as np
-
-# Manual PCA using covariance matrix
-cov = np.array([[5, 2], [2, 3]])
-eigvals, eigvecs = np.linalg.eig(cov)
-print("Eigenvalues:", eigvals)
-print("Principal Component:", eigvecs[:, np.argmax(eigvals)])
-eigvals, eigvecs = np.linalg.eig(cov)
-principal_vector = eigvecs[:, np.argmax(eigvals)]
+Dropout(0.5)
+Dense(128, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.01))
 ```
 
-📌 LDA – Linear Discriminant Analysis
+These settings are defined through GUI components for each layer.
 
-### Linear Discriminant Analysis (LDA)
-LDA is a supervised dimensionality reduction technique that finds the linear combinations of features that best separate 
-two or more classes. Unlike PCA, which is unsupervised, LDA uses class labels to enhance inter-class variance while minimizing intra-class variance.
-Projects data in a way that maximizes class separability.
+---
+
+###  Early Stopping
+
+Monitors validation loss and halts training if no improvement is observed for several epochs.
+
 ```python
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
-
-# Apply LDA for dimensionality reduction and class separation
-lda = LDA(n_components=2)
-X_lda = lda.fit_transform(X_train, y_train)
-print("LDA Projection:
-", X_lda[:5])
-X_lda = lda.fit_transform(self.X_train, self.y_train)
+EarlyStopping(monitor='val_loss', patience=5)
 ```
 
-📌 t-SNE
+This is configurable via a numeric spinbox in the GUI.
 
-### t-SNE (t-Distributed Stochastic Neighbor Embedding)
-t-SNE is a powerful non-linear dimensionality reduction algorithm used for visualization. It models pairwise similarities in high-dimensional space 
-and tries to preserve these relationships in a low-dimensional map. It’s excellent for discovering clusters and structures in complex datasets, 
-especially for visual exploration.
-Projects high-dimensional data to 2D/3D using non-linear mapping.
+---
+
+##  Visualization Tools
+
+###  Training Curves
+
+The GUI plots both **accuracy and loss curves** for training and validation sets.
+
 ```python
-from sklearn.manifold import TSNE
-
-# Run t-SNE with configurable dimensions and perplexity
-tsne = TSNE(n_components=3, perplexity=30.0, random_state=42)
-X_tsne = tsne.fit_transform(X_train)
-print("t-SNE Output:
-", X_tsne[:5])
-X_tsne = tsne.fit_transform(self.X_train)
+plt.plot(history.history['accuracy'])
+plt.plot(history.history['val_accuracy'])
 ```
 
-📌 UMAP
+This helps users detect underfitting or overfitting visually.
 
-### UMAP (Uniform Manifold Approximation and Projection)
-UMAP is a modern and scalable algorithm for dimensionality reduction. It preserves both local neighborhoods and broader structure, 
-making it suitable for clustering, visualization, and pre-processing large datasets before training.
-A faster alternative to t-SNE that preserves more global structure.
+---
+
+###  Gradient Histogram
+
+After each epoch, a histogram of **weight gradients** is displayed using matplotlib to analyze gradient magnitude distribution.
+
 ```python
-from umap import UMAP
-
-# Apply UMAP for 2D or 3D projection
-reducer = UMAP(n_components=2, random_state=42)
-X_umap = reducer.fit_transform(X_train)
-print("UMAP Projection:
-", X_umap[:5])
-X_umap = reducer.fit_transform(self.X_train)
+with tf.GradientTape() as tape:
+    loss = model.compiled_loss(y_true, y_pred)
+grads = tape.gradient(loss, model.trainable_weights)
 ```
 
-📌 KMeans Clustering
+This gives insight into vanishing/exploding gradients during training.
 
-### KMeans Clustering & Evaluation
-KMeans groups data into `k` clusters based on minimizing within-cluster distance. This section includes:
-- Elbow Method: to choose optimal `k` by plotting inertia
-- Silhouette Score: to assess how well-separated the clusters are
-- PCA projection for visualization of clusters in 2D space
-Fit clusters, evaluate inertia and silhouette score.
+---
+
+##  Evaluation Metrics
+
+After training, the system computes and displays test set metrics:
+
+- **Accuracy**
+- **F1 Score**
+- (Optional: Confusion Matrix)
+
 ```python
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
-
-# Run KMeans clustering and evaluate using silhouette score
-k = 4
-kmeans = KMeans(n_clusters=k, random_state=42)
-labels = kmeans.fit_predict(X_train)
-inertia = kmeans.inertia_
-score = silhouette_score(X_train, labels)
-
-print(f"KMeans Inertia: {inertia}")
-print(f"Silhouette Score: {score:.3f}")
-kmeans.fit(self.X_train)
-labels = kmeans.predict(self.X_train)
-score = silhouette_score(self.X_train, labels)
+accuracy_score(y_true, y_pred)
+f1_score(y_true, y_pred, average='weighted')
 ```
 
-📌 Cross-Validation
+These are shown in the GUI for quick interpretation.
 
-### k-Fold Cross Validation
-k-Fold CV is a statistical method to evaluate model generalization. It splits the training data into `k` parts, trains the model on `k-1` folds, 
-and tests on the remaining one. The process repeats `k` times to calculate a stable average metric, such as accuracy or RMSE. 
-This helps reduce bias from a single train/test split.
-Evaluate model performance on multiple folds of the training set.
+---
+
+##  Data Augmentation (for Images)
+
+For image inputs, the GUI allows on-the-fly augmentation using:
+
+- **Random rotation** (up to 30°)
+- **Zoom** (up to 20%)
+- **Horizontal flip**
+
 ```python
-from sklearn.model_selection import KFold
-from sklearn.metrics import accuracy_score
-
-# Perform k-Fold Cross Validation
-kf = KFold(n_splits=5, shuffle=True, random_state=42)
-accuracies = []
-
-for train_idx, test_idx in kf.split(X):
-    model.fit(X[train_idx], y[train_idx])
-    preds = model.predict(X[test_idx])
-    acc = accuracy_score(y[test_idx], preds)
-    accuracies.append(acc)
-
-print("Fold Accuracies:", accuracies)
-print("Mean Accuracy:", np.mean(accuracies))
-for train_idx, test_idx in kf.split(self.X_train):
-    model.fit(self.X_train[train_idx], self.y_train[train_idx])
-    y_pred = model.predict(self.X_train[test_idx])
+ImageDataGenerator(
+    rotation_range=30,
+    zoom_range=0.2,
+    horizontal_flip=True
+)
 ```
 
-## Student Information
+This increases model generalization during training.
 
-- **Student ID**: 2206A604  
-- **Student Name & Surname**: Aziz Yavuz
-- **Course**: MKT3434 – Machine Learning  
-- **Instructor**: Ertugrul Bayraktar
+---
+
+##  Transfer Learning
+
+Supports loading pre-trained **VGG16** or **ResNet50** models (without top layers), freezing the convolutional base, and adding custom dense layers for fine-tuning.
+
+```python
+base_model = tf.keras.applications.VGG16(include_top=False, weights='imagenet')
+model = Sequential([
+    base_model,
+    GlobalAveragePooling2D(),
+    Dense(128, activation='relu'),
+    Dropout(0.5),
+    Dense(num_classes, activation='softmax')
+])
+```
+
+Students can control dropout, dense units, and freeze option via GUI.
+
+---
+
+###  Model Saving & Loading
+
+- Save full model as `.h5`
+- Save only architecture as `.json`
+- Load architecture and weights separately
+
+```python
+model.save("model.h5")
+model.to_json()
+model.load_weights("weights.h5")
+```
+
+These options allow checkpointing and resuming training across sessions.
+
+---
+
+##  Conclusion
+
+This final assignment brings the GUI into full production-level capabilities by supporting:
+- Custom deep neural networks,
+- CNNs, RNNs, transfer learning,
+- Gradient diagnostics,
+- Advanced training schedules and optimizers,
+- Visual tracking of performance and generalization.
+
+All features are exposed through an intuitive GUI for educational exploration.
